@@ -40,13 +40,13 @@ app.use(helmet({
 }));
 app.use(express.json());
 
-// CORS configuration - Aberto para testes
+// CORS configuration - Totalmente aberto para OpenAI
 app.use(cors({
   origin: '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Length', 'X-Knowledge-Base'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'openai-conversation-id', 'openai-ephemeral-user-id'],
+  exposedHeaders: ['Content-Length', 'X-Knowledge-Base', 'X-OpenAI-Functions'],
   maxAge: 86400
 }));
 
@@ -83,8 +83,336 @@ const authenticate = (req, res, next) => {
 app.options('*', (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, openai-conversation-id, openai-ephemeral-user-id');
   res.sendStatus(200);
+});
+
+// OpenAI Plugin Manifest (necessário para auto-discovery)
+app.get('/.well-known/ai-plugin.json', (req, res) => {
+  const host = req.get('host');
+  const protocol = req.protocol;
+  
+  res.json({
+    schema_version: "v1",
+    name_for_human: "Admin Analytics MCP",
+    name_for_model: "admin_analytics",
+    description_for_human: "Get user analytics, payment data, and manage users",
+    description_for_model: "Plugin for getting user analytics, payment analytics, and managing users. Use this whenever the user asks about users, payments, or analytics data.",
+    auth: {
+      type: "none"
+    },
+    api: {
+      type: "openapi",
+      url: `${protocol}://${host}/openapi.yaml`
+    },
+    logo_url: `${protocol}://${host}/logo.png`,
+    contact_email: "support@example.com",
+    legal_info_url: `${protocol}://${host}/legal`
+  });
+});
+
+// Logo placeholder
+app.get('/logo.png', (req, res) => {
+  // Return a simple 1x1 transparent PNG
+  const img = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': img.length
+  });
+  res.end(img);
+});
+
+// Legal page
+app.get('/legal', (req, res) => {
+  res.send('Legal information for Admin Analytics MCP');
+});
+
+// OpenAPI specification in YAML format (OpenAI prefers YAML)
+app.get('/openapi.yaml', (req, res) => {
+  const host = req.get('host');
+  const protocol = req.protocol;
+  
+  const yaml = `openapi: 3.0.1
+info:
+  title: Admin Analytics MCP API
+  description: API for user analytics, payment analytics, and user management
+  version: 'v1'
+servers:
+  - url: ${protocol}://${host}
+paths:
+  /functions/get_user_analytics:
+    post:
+      operationId: getUserAnalytics
+      summary: Get user analytics data
+      description: Returns analytics about users including total users, active users, and new users for a date range
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                startDate:
+                  type: string
+                  format: date
+                  description: Start date for analytics in YYYY-MM-DD format
+                endDate:
+                  type: string
+                  format: date
+                  description: End date for analytics in YYYY-MM-DD format
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalUsers:
+                    type: integer
+                    description: Total number of users in the system
+                  activeUsers:
+                    type: integer
+                    description: Number of active users in the last 30 days
+                  newUsers:
+                    type: integer
+                    description: Number of new users in the specified date range
+                  lastUpdated:
+                    type: string
+                    format: date-time
+                    description: Timestamp of when the data was last updated
+  
+  /functions/get_payment_analytics:
+    post:
+      operationId: getPaymentAnalytics
+      summary: Get payment analytics data
+      description: Returns analytics about payments including revenue, transactions, and conversion rates
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                startDate:
+                  type: string
+                  format: date
+                  description: Start date for analytics in YYYY-MM-DD format
+                endDate:
+                  type: string
+                  format: date
+                  description: End date for analytics in YYYY-MM-DD format
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalRevenue:
+                    type: number
+                    description: Total revenue in the period
+                  totalTransactions:
+                    type: integer
+                    description: Total number of transactions
+                  completedTransactions:
+                    type: integer
+                    description: Number of completed transactions
+                  conversionRate:
+                    type: number
+                    description: Conversion rate percentage
+                  lastUpdated:
+                    type: string
+                    format: date-time
+  
+  /functions/manage_user:
+    post:
+      operationId: manageUser
+      summary: Manage system users
+      description: List, update, or delete users in the system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum: [list, update, delete]
+                  description: The action to perform
+                userId:
+                  type: string
+                  description: User ID (required for update and delete)
+                data:
+                  type: object
+                  description: User data for update
+                  properties:
+                    name:
+                      type: string
+                    email:
+                      type: string
+                    role:
+                      type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        email:
+                          type: string
+                        name:
+                          type: string
+                        role:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                  updated:
+                    type: object
+                  deleted:
+                    type: boolean`;
+    
+  res.set('Content-Type', 'text/yaml');
+  res.send(yaml);
+});
+
+// OpenAPI JSON alternative
+app.get('/openapi.json', (req, res) => {
+  const host = req.get('host');
+  const protocol = req.protocol;
+  
+  res.json({
+    openapi: '3.0.1',
+    info: {
+      title: 'Admin Analytics MCP API',
+      description: 'API for user analytics, payment analytics, and user management',
+      version: 'v1'
+    },
+    servers: [
+      {
+        url: `${protocol}://${host}`
+      }
+    ],
+    paths: {
+      '/functions/get_user_analytics': {
+        post: {
+          operationId: 'getUserAnalytics',
+          summary: 'Get user analytics data',
+          requestBody: {
+            required: false,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    startDate: {
+                      type: 'string',
+                      format: 'date'
+                    },
+                    endDate: {
+                      type: 'string',
+                      format: 'date'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Successful response',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object'
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/functions/get_payment_analytics': {
+        post: {
+          operationId: 'getPaymentAnalytics',
+          summary: 'Get payment analytics data',
+          requestBody: {
+            required: false,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    startDate: {
+                      type: 'string',
+                      format: 'date'
+                    },
+                    endDate: {
+                      type: 'string',
+                      format: 'date'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Successful response'
+            }
+          }
+        }
+      },
+      '/functions/manage_user': {
+        post: {
+          operationId: 'manageUser',
+          summary: 'Manage system users',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['action'],
+                  properties: {
+                    action: {
+                      type: 'string',
+                      enum: ['list', 'update', 'delete']
+                    },
+                    userId: {
+                      type: 'string'
+                    },
+                    data: {
+                      type: 'object'
+                    }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Successful response'
+            }
+          }
+        }
+      }
+    }
+  });
 });
 
 // Health check endpoint
@@ -96,101 +424,101 @@ app.get('/health', (req, res) => {
   });
 });
 
-// OpenAI Compatible Functions Format
-const openAIFunctions = [
-  {
-    name: 'get_user_analytics',
-    description: 'Get detailed user analytics including total users, active users, and new users for a specific date range',
-    parameters: {
-      type: 'object',
-      properties: {
-        startDate: {
-          type: 'string',
-          description: 'Start date for analytics in YYYY-MM-DD format'
-        },
-        endDate: {
-          type: 'string',
-          description: 'End date for analytics in YYYY-MM-DD format'
-        }
-      },
-      required: []
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Admin Analytics MCP Server',
+    version: '1.0.0',
+    status: 'online',
+    openai_plugin: '/.well-known/ai-plugin.json',
+    openapi_spec: '/openapi.yaml',
+    endpoints: {
+      functions: {
+        get_user_analytics: 'POST /functions/get_user_analytics',
+        get_payment_analytics: 'POST /functions/get_payment_analytics',
+        manage_user: 'POST /functions/manage_user'
+      }
     }
-  },
-  {
-    name: 'get_payment_analytics',
-    description: 'Get payment analytics including total revenue, transaction counts, and conversion rates',
-    parameters: {
-      type: 'object',
-      properties: {
-        startDate: {
-          type: 'string',
-          description: 'Start date for analytics in YYYY-MM-DD format'
-        },
-        endDate: {
-          type: 'string',
-          description: 'End date for analytics in YYYY-MM-DD format'
-        }
-      },
-      required: []
+  });
+});
+
+// Function endpoints in OpenAI expected format
+app.post('/functions/get_user_analytics', authenticate, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body || {};
+    const result = await getUserAnalytics({ startDate, endDate });
+    res.json(result);
+  } catch (error) {
+    logger.error('Error in get_user_analytics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/functions/get_payment_analytics', authenticate, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body || {};
+    const result = await getPaymentAnalytics({ startDate, endDate });
+    res.json(result);
+  } catch (error) {
+    logger.error('Error in get_payment_analytics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/functions/manage_user', authenticate, async (req, res) => {
+  try {
+    const { action, userId, data } = req.body;
+    if (!action) {
+      return res.status(400).json({ error: 'action is required' });
     }
-  },
-  {
-    name: 'manage_user',
-    description: 'Manage system users - list all users, update user data, or delete a user',
-    parameters: {
-      type: 'object',
-      properties: {
-        action: {
-          type: 'string',
-          enum: ['list', 'update', 'delete'],
-          description: 'Action to perform: list (get all users), update (modify user data), or delete (remove user)'
-        },
-        userId: {
-          type: 'string',
-          description: 'User ID (required for update and delete actions)'
-        },
-        data: {
+    const result = await manageUser({ action, userId, data });
+    res.json(result);
+  } catch (error) {
+    logger.error('Error in manage_user:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Legacy MCP endpoints (mantém compatibilidade)
+app.get('/mcp/tools', authenticate, async (req, res) => {
+  try {
+    const tools = [
+      {
+        name: 'get_user_analytics',
+        description: 'Obtém análises detalhadas de usuários',
+        inputSchema: {
           type: 'object',
-          description: 'User data to update (required for update action)',
           properties: {
-            name: { type: 'string' },
-            email: { type: 'string' },
-            role: { type: 'string' }
+            startDate: { type: 'string', format: 'date' },
+            endDate: { type: 'string', format: 'date' }
           }
         }
       },
-      required: ['action']
-    }
-  }
-];
-
-// OpenAI-compatible endpoint for function discovery
-app.get('/openai/functions', authenticate, (req, res) => {
-  res.json({
-    functions: openAIFunctions,
-    server_info: {
-      name: 'Admin MCP Server',
-      version: '1.0.0',
-      description: 'Server for user and payment analytics'
-    }
-  });
-});
-
-// Alternative endpoint that might be expected by OpenAI
-app.get('/functions', authenticate, (req, res) => {
-  res.json({
-    functions: openAIFunctions
-  });
-});
-
-// MCP Tools endpoint (mantém compatibilidade)
-app.get('/mcp/tools', authenticate, async (req, res) => {
-  try {
-    const tools = openAIFunctions.map(func => ({
-      name: func.name,
-      description: func.description,
-      inputSchema: func.parameters
-    }));
+      {
+        name: 'get_payment_analytics',
+        description: 'Obtém análises de pagamentos',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            startDate: { type: 'string', format: 'date' },
+            endDate: { type: 'string', format: 'date' }
+          }
+        }
+      },
+      {
+        name: 'manage_user',
+        description: 'Gerencia usuários do sistema',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', enum: ['list', 'update', 'delete'] },
+            userId: { type: 'string' },
+            data: { type: 'object' }
+          },
+          required: ['action']
+        }
+      }
+    ];
     
     res.json({ tools });
   } catch (error) {
@@ -199,44 +527,6 @@ app.get('/mcp/tools', authenticate, async (req, res) => {
   }
 });
 
-// OpenAI-compatible function execution endpoint
-app.post('/openai/execute', authenticate, async (req, res) => {
-  try {
-    const { function_name, arguments: args } = req.body;
-    
-    if (!function_name) {
-      return res.status(400).json({ error: 'function_name is required' });
-    }
-    
-    logger.info(`OpenAI Function Call: ${function_name}`, { arguments: args });
-    
-    let result;
-    
-    switch (function_name) {
-      case 'get_user_analytics':
-        result = await getUserAnalytics(args);
-        break;
-        
-      case 'get_payment_analytics':
-        result = await getPaymentAnalytics(args);
-        break;
-        
-      case 'manage_user':
-        result = await manageUser(args);
-        break;
-        
-      default:
-        return res.status(400).json({ error: `Unknown function: ${function_name}` });
-    }
-    
-    res.json({ result });
-  } catch (error) {
-    logger.error('Error in /openai/execute:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
-  }
-});
-
-// MCP Call endpoint (mantém compatibilidade)
 app.post('/mcp/call', authenticate, async (req, res) => {
   try {
     const { method, params } = req.body;
@@ -271,78 +561,6 @@ app.post('/mcp/call', authenticate, async (req, res) => {
     logger.error('Error in /mcp/call:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
-});
-
-// OpenAPI/Swagger endpoint for better compatibility
-app.get('/openapi.json', (req, res) => {
-  const openApiSpec = {
-    openapi: '3.0.0',
-    info: {
-      title: 'Admin MCP Server API',
-      version: '1.0.0',
-      description: 'API for user and payment analytics'
-    },
-    servers: [
-      {
-        url: `https://${req.get('host')}`,
-        description: 'Production server'
-      }
-    ],
-    paths: {
-      '/openai/functions': {
-        get: {
-          summary: 'List available functions',
-          responses: {
-            '200': {
-              description: 'List of available functions',
-              content: {
-                'application/json': {
-                  schema: {
-                    type: 'object',
-                    properties: {
-                      functions: {
-                        type: 'array',
-                        items: {
-                          type: 'object'
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      '/openai/execute': {
-        post: {
-          summary: 'Execute a function',
-          requestBody: {
-            required: true,
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: {
-                    function_name: { type: 'string' },
-                    arguments: { type: 'object' }
-                  },
-                  required: ['function_name']
-                }
-              }
-            }
-          },
-          responses: {
-            '200': {
-              description: 'Function execution result'
-            }
-          }
-        }
-      }
-    }
-  };
-  
-  res.json(openApiSpec);
 });
 
 // Tool implementations
@@ -460,46 +678,19 @@ async function manageUser(params) {
   }
 }
 
-// Root endpoint with API information
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Admin MCP Server',
-    version: '1.0.0',
-    status: 'online',
-    endpoints: {
-      health: '/health',
-      mcp_tools: '/mcp/tools',
-      mcp_call: '/mcp/call',
-      openai_functions: '/openai/functions',
-      openai_execute: '/openai/execute',
-      openapi_spec: '/openapi.json'
-    },
-    documentation: 'Use /openai/functions to discover available functions and /openai/execute to call them'
-  });
-});
-
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Not found',
     path: req.path,
     method: req.method,
-    available_endpoints: ['/health', '/mcp/tools', '/mcp/call', '/openai/functions', '/openai/execute', '/openapi.json']
+    hint: 'Check /.well-known/ai-plugin.json for OpenAI plugin info'
   });
 });
 
 // Error handling middleware
 app.use((error, req, res, next) => {
   logger.error('Unhandled error:', error);
-  
-  // CORS error específico
-  if (error.message && error.message.includes('CORS')) {
-    return res.status(403).json({ 
-      error: 'CORS policy error',
-      message: error.message,
-      origin: req.headers.origin || 'no origin'
-    });
-  }
   
   res.status(500).json({ 
     error: 'Internal server error',
@@ -511,8 +702,8 @@ app.use((error, req, res, next) => {
 app.listen(PORT, () => {
   logger.info(`MCP Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`CORS origins: *`);
-  logger.info(`OpenAI endpoints available at /openai/functions and /openai/execute`);
+  logger.info(`OpenAI Plugin manifest at /.well-known/ai-plugin.json`);
+  logger.info(`OpenAPI spec at /openapi.yaml`);
 });
 
 // Handle graceful shutdown
