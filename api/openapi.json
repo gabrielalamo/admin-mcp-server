@@ -1,0 +1,145 @@
+// Adicione este endpoint no seu index.js, após os outros endpoints
+
+// Alias para /api/openapi.json (alguns sistemas OpenAI procuram aqui)
+app.get('/api/openapi.json', (req, res) => {
+  const host = req.get('host');
+  const protocol = 'https'; // Sempre HTTPS
+  
+  res.json({
+    openapi: '3.1.0',
+    info: {
+      title: 'Admin Analytics MCP API',
+      description: 'API for user analytics, payment analytics, and user management',
+      version: '1.0.0'
+    },
+    servers: [
+      {
+        url: `${protocol}://${host}`,
+        description: 'Production server'
+      }
+    ],
+    paths: {
+      '/functions/get_user_analytics': {
+        post: {
+          operationId: 'getUserAnalytics',
+          summary: 'Get user analytics data',
+          requestBody: {
+            required: false,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    startDate: { type: 'string', format: 'date' },
+                    endDate: { type: 'string', format: 'date' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Success',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      totalUsers: { type: 'integer' },
+                      activeUsers: { type: 'integer' },
+                      newUsers: { type: 'integer' },
+                      lastUpdated: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/functions/get_payment_analytics': {
+        post: {
+          operationId: 'getPaymentAnalytics',
+          summary: 'Get payment analytics data',
+          requestBody: {
+            required: false,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    startDate: { type: 'string', format: 'date' },
+                    endDate: { type: 'string', format: 'date' }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Success',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      totalRevenue: { type: 'number' },
+                      totalTransactions: { type: 'integer' },
+                      completedTransactions: { type: 'integer' },
+                      conversionRate: { type: 'number' },
+                      lastUpdated: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/functions/manage_user': {
+        post: {
+          operationId: 'manageUser',
+          summary: 'Manage system users',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['action'],
+                  properties: {
+                    action: {
+                      type: 'string',
+                      enum: ['list', 'update', 'delete']
+                    },
+                    userId: { type: 'string' },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        email: { type: 'string' },
+                        role: { type: 'string' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Success',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object'
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+});
