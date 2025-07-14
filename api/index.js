@@ -21,98 +21,134 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-// Middleware
-app.use(express.json());
+// Middleware - CORS totalmente aberto para OpenAI
 app.use(cors({
   origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
-  credentials: true
+  methods: '*',
+  allowedHeaders: '*',
+  exposedHeaders: '*',
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 
-// Authentication middleware
-const authenticate = (req, res, next) => {
-  const apiKey = process.env.MCP_API_KEY;
-  
-  if (!apiKey) {
-    return next(); // No auth required if no key is set
+app.use(express.json());
+
+// Log todas as requisições para debug
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log('Headers:', req.headers);
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log('Body:', req.body);
   }
-  
-  const providedKey = req.headers['x-api-key'] || req.headers.authorization?.replace('Bearer ', '');
-  
-  if (providedKey !== apiKey) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  
   next();
-};
+});
 
-// MCP Protocol Endpoints
+// Handle OPTIONS requests
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', '*');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.sendStatus(200);
+});
 
-// 1. List available tools (MCP standard)
-app.get('/tools', authenticate, (req, res) => {
-  res.json({
+// Root endpoint - MCP server info
+app.get('/', (req, res) => {
+  const response = {
+    mcp_version: "1.0",
+    name: "Analytics MCP Server",
+    description: "MCP server for user and payment analytics",
     tools: [
       {
-        name: 'get_user_analytics',
-        description: 'Get analytics about users including total, active, and new users',
-        parameters: {
-          type: 'object',
-          properties: {
-            startDate: {
-              type: 'string',
-              description: 'Start date in YYYY-MM-DD format',
-              format: 'date'
-            },
-            endDate: {
-              type: 'string',
-              description: 'End date in YYYY-MM-DD format',
-              format: 'date'
-            }
-          },
-          required: []
-        }
+        name: "get_user_analytics",
+        description: "Get user analytics data"
       },
       {
-        name: 'get_payment_analytics',
-        description: 'Get payment analytics including revenue and transaction data',
-        parameters: {
-          type: 'object',
-          properties: {
-            startDate: {
-              type: 'string',
-              description: 'Start date in YYYY-MM-DD format',
-              format: 'date'
-            },
-            endDate: {
-              type: 'string',
-              description: 'End date in YYYY-MM-DD format',
-              format: 'date'
-            }
-          },
-          required: []
-        }
+        name: "get_payment_analytics", 
+        description: "Get payment analytics data"
       },
       {
-        name: 'list_users',
-        description: 'Get a list of all users in the system',
-        parameters: {
-          type: 'object',
-          properties: {},
-          required: []
-        }
+        name: "list_users",
+        description: "List all users"
       }
     ]
+  };
+  
+  console.log('Sending root response:', response);
+  res.json(response);
+});
+
+// MCP handshake endpoint
+app.post('/handshake', (req, res) => {
+  console.log('Handshake request received');
+  res.json({
+    status: "ok",
+    mcp_version: "1.0",
+    capabilities: {
+      tools: true
+    }
   });
 });
 
-// 2. Execute tool (MCP standard)
-app.post('/execute', authenticate, async (req, res) => {
+// List tools endpoint
+app.get('/tools', (req, res) => {
+  const tools = [
+    {
+      name: "get_user_analytics",
+      description: "Get analytics about users including total, active, and new users",
+      input_schema: {
+        type: "object",
+        properties: {
+          startDate: {
+            type: "string",
+            description: "Start date in YYYY-MM-DD format"
+          },
+          endDate: {
+            type: "string",
+            description: "End date in YYYY-MM-DD format"
+          }
+        }
+      }
+    },
+    {
+      name: "get_payment_analytics",
+      description: "Get payment analytics including revenue and transaction data",
+      input_schema: {
+        type: "object", 
+        properties: {
+          startDate: {
+            type: "string",
+            description: "Start date in YYYY-MM-DD format"
+          },
+          endDate: {
+            type: "string",
+            description: "End date in YYYY-MM-DD format"
+          }
+        }
+      }
+    },
+    {
+      name: "list_users",
+      description: "Get a list of all users in the system",
+      input_schema: {
+        type: "object",
+        properties: {}
+      }
+    }
+  ];
+  
+  console.log('Sending tools:', tools);
+  res.json({ tools });
+});
+
+// Execute tool endpoint
+app.post('/execute', async (req, res) => {
   try {
+    console.log('Execute request:', req.body);
+    
     const { tool, arguments: args = {} } = req.body;
     
     if (!tool) {
-      return res.status(400).json({ error: 'Tool name is required' });
+      return res.status(400).json({ error: "Tool name is required" });
     }
     
     let result;
@@ -134,24 +170,32 @@ app.post('/execute', authenticate, async (req, res) => {
         return res.status(400).json({ error: `Unknown tool: ${tool}` });
     }
     
-    res.json({ result });
+    console.log('Sending result:', result);
+    res.json(result);
   } catch (error) {
     console.error('Error executing tool:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// 3. Server info endpoint
-app.get('/', authenticate, (req, res) => {
-  res.json({
-    name: 'Analytics MCP Server',
-    version: '1.0.0',
-    protocol: 'mcp',
-    capabilities: {
-      tools: true,
-      resources: false,
-      prompts: false
-    }
+// Tool call endpoint (alternative format)
+app.post('/tool/call', async (req, res) => {
+  console.log('Tool call request:', req.body);
+  // Reuse execute logic
+  return app._router.handle(
+    Object.assign(req, { 
+      url: '/execute',
+      body: req.body 
+    }), 
+    res
+  );
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -234,24 +278,33 @@ async function listUsers() {
   };
 }
 
-// Legacy endpoints for compatibility
-app.get('/mcp/tools', authenticate, (req, res) => {
+// Legacy MCP endpoints for compatibility
+app.get('/mcp/tools', (req, res) => {
   res.redirect('/tools');
 });
 
-app.post('/mcp/call', authenticate, async (req, res) => {
+app.post('/mcp/call', async (req, res) => {
   const { method, params } = req.body;
-  // Transform to new format
   req.body = { tool: method, arguments: params };
-  // Forward to execute endpoint
-  return app._router.handle(req, res);
+  return app._router.handle(
+    Object.assign(req, { url: '/execute' }), 
+    res
+  );
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy',
-    timestamp: new Date().toISOString()
+// Catch-all for debugging
+app.use((req, res) => {
+  console.log(`404 - Unhandled route: ${req.method} ${req.path}`);
+  res.status(404).json({ 
+    error: 'Not found',
+    message: `Cannot ${req.method} ${req.path}`,
+    available_endpoints: [
+      'GET /',
+      'GET /tools',
+      'POST /execute',
+      'POST /handshake',
+      'GET /health'
+    ]
   });
 });
 
@@ -262,10 +315,15 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`MCP Server running on port ${PORT}`);
-  console.log('Available endpoints:');
-  console.log('  GET  / - Server info');
-  console.log('  GET  /tools - List available tools');
-  console.log('  POST /execute - Execute a tool');
+  console.log('Server started at:', new Date().toISOString());
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('Server closed');
+  });
 });
