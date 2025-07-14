@@ -35,15 +35,19 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+}));
 app.use(express.json());
 
-// CORS configuration - TEMPORARIAMENTE ABERTO
+// CORS configuration - Aberto para testes
 app.use(cors({
-  origin: true, // Aceita qualquer origem
+  origin: '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Length', 'X-Knowledge-Base'],
+  maxAge: 86400
 }));
 
 // Authentication middleware
@@ -92,46 +96,101 @@ app.get('/health', (req, res) => {
   });
 });
 
-// MCP Tools endpoint
+// OpenAI Compatible Functions Format
+const openAIFunctions = [
+  {
+    name: 'get_user_analytics',
+    description: 'Get detailed user analytics including total users, active users, and new users for a specific date range',
+    parameters: {
+      type: 'object',
+      properties: {
+        startDate: {
+          type: 'string',
+          description: 'Start date for analytics in YYYY-MM-DD format'
+        },
+        endDate: {
+          type: 'string',
+          description: 'End date for analytics in YYYY-MM-DD format'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'get_payment_analytics',
+    description: 'Get payment analytics including total revenue, transaction counts, and conversion rates',
+    parameters: {
+      type: 'object',
+      properties: {
+        startDate: {
+          type: 'string',
+          description: 'Start date for analytics in YYYY-MM-DD format'
+        },
+        endDate: {
+          type: 'string',
+          description: 'End date for analytics in YYYY-MM-DD format'
+        }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'manage_user',
+    description: 'Manage system users - list all users, update user data, or delete a user',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'update', 'delete'],
+          description: 'Action to perform: list (get all users), update (modify user data), or delete (remove user)'
+        },
+        userId: {
+          type: 'string',
+          description: 'User ID (required for update and delete actions)'
+        },
+        data: {
+          type: 'object',
+          description: 'User data to update (required for update action)',
+          properties: {
+            name: { type: 'string' },
+            email: { type: 'string' },
+            role: { type: 'string' }
+          }
+        }
+      },
+      required: ['action']
+    }
+  }
+];
+
+// OpenAI-compatible endpoint for function discovery
+app.get('/openai/functions', authenticate, (req, res) => {
+  res.json({
+    functions: openAIFunctions,
+    server_info: {
+      name: 'Admin MCP Server',
+      version: '1.0.0',
+      description: 'Server for user and payment analytics'
+    }
+  });
+});
+
+// Alternative endpoint that might be expected by OpenAI
+app.get('/functions', authenticate, (req, res) => {
+  res.json({
+    functions: openAIFunctions
+  });
+});
+
+// MCP Tools endpoint (mantém compatibilidade)
 app.get('/mcp/tools', authenticate, async (req, res) => {
   try {
-    const tools = [
-      {
-        name: 'get_user_analytics',
-        description: 'Obtém análises detalhadas de usuários',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            startDate: { type: 'string', format: 'date' },
-            endDate: { type: 'string', format: 'date' }
-          }
-        }
-      },
-      {
-        name: 'get_payment_analytics',
-        description: 'Obtém análises de pagamentos',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            startDate: { type: 'string', format: 'date' },
-            endDate: { type: 'string', format: 'date' }
-          }
-        }
-      },
-      {
-        name: 'manage_user',
-        description: 'Gerencia usuários do sistema',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            action: { type: 'string', enum: ['list', 'update', 'delete'] },
-            userId: { type: 'string' },
-            data: { type: 'object' }
-          },
-          required: ['action']
-        }
-      }
-    ];
+    const tools = openAIFunctions.map(func => ({
+      name: func.name,
+      description: func.description,
+      inputSchema: func.parameters
+    }));
     
     res.json({ tools });
   } catch (error) {
@@ -140,7 +199,44 @@ app.get('/mcp/tools', authenticate, async (req, res) => {
   }
 });
 
-// MCP Call endpoint
+// OpenAI-compatible function execution endpoint
+app.post('/openai/execute', authenticate, async (req, res) => {
+  try {
+    const { function_name, arguments: args } = req.body;
+    
+    if (!function_name) {
+      return res.status(400).json({ error: 'function_name is required' });
+    }
+    
+    logger.info(`OpenAI Function Call: ${function_name}`, { arguments: args });
+    
+    let result;
+    
+    switch (function_name) {
+      case 'get_user_analytics':
+        result = await getUserAnalytics(args);
+        break;
+        
+      case 'get_payment_analytics':
+        result = await getPaymentAnalytics(args);
+        break;
+        
+      case 'manage_user':
+        result = await manageUser(args);
+        break;
+        
+      default:
+        return res.status(400).json({ error: `Unknown function: ${function_name}` });
+    }
+    
+    res.json({ result });
+  } catch (error) {
+    logger.error('Error in /openai/execute:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// MCP Call endpoint (mantém compatibilidade)
 app.post('/mcp/call', authenticate, async (req, res) => {
   try {
     const { method, params } = req.body;
@@ -175,6 +271,78 @@ app.post('/mcp/call', authenticate, async (req, res) => {
     logger.error('Error in /mcp/call:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
+});
+
+// OpenAPI/Swagger endpoint for better compatibility
+app.get('/openapi.json', (req, res) => {
+  const openApiSpec = {
+    openapi: '3.0.0',
+    info: {
+      title: 'Admin MCP Server API',
+      version: '1.0.0',
+      description: 'API for user and payment analytics'
+    },
+    servers: [
+      {
+        url: `https://${req.get('host')}`,
+        description: 'Production server'
+      }
+    ],
+    paths: {
+      '/openai/functions': {
+        get: {
+          summary: 'List available functions',
+          responses: {
+            '200': {
+              description: 'List of available functions',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      functions: {
+                        type: 'array',
+                        items: {
+                          type: 'object'
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      '/openai/execute': {
+        post: {
+          summary: 'Execute a function',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    function_name: { type: 'string' },
+                    arguments: { type: 'object' }
+                  },
+                  required: ['function_name']
+                }
+              }
+            }
+          },
+          responses: {
+            '200': {
+              description: 'Function execution result'
+            }
+          }
+        }
+      }
+    }
+  };
+  
+  res.json(openApiSpec);
 });
 
 // Tool implementations
@@ -292,12 +460,31 @@ async function manageUser(params) {
   }
 }
 
+// Root endpoint with API information
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Admin MCP Server',
+    version: '1.0.0',
+    status: 'online',
+    endpoints: {
+      health: '/health',
+      mcp_tools: '/mcp/tools',
+      mcp_call: '/mcp/call',
+      openai_functions: '/openai/functions',
+      openai_execute: '/openai/execute',
+      openapi_spec: '/openapi.json'
+    },
+    documentation: 'Use /openai/functions to discover available functions and /openai/execute to call them'
+  });
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ 
     error: 'Not found',
     path: req.path,
-    method: req.method
+    method: req.method,
+    available_endpoints: ['/health', '/mcp/tools', '/mcp/call', '/openai/functions', '/openai/execute', '/openapi.json']
   });
 });
 
@@ -324,7 +511,8 @@ app.use((error, req, res, next) => {
 app.listen(PORT, () => {
   logger.info(`MCP Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`CORS origins: ${allowedOrigins.join(', ')}`);
+  logger.info(`CORS origins: *`);
+  logger.info(`OpenAI endpoints available at /openai/functions and /openai/execute`);
 });
 
 // Handle graceful shutdown
