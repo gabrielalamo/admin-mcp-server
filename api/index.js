@@ -38,24 +38,21 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 app.use(helmet());
 app.use(express.json());
 
-// CORS configuration
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173'];
-
+// CORS configuration - TEMPORARIAMENTE ABERTO
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
+  origin: true, // Aceita qualquer origem
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Authentication middleware
 const authenticate = (req, res, next) => {
+  // Skip authentication for OPTIONS requests
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+  
   const apiKey = process.env.MCP_API_KEY;
   
   // If no API key is configured, allow all requests (development mode)
@@ -77,6 +74,14 @@ const authenticate = (req, res, next) => {
   
   next();
 };
+
+// Handle preflight requests
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.sendStatus(200);
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -287,10 +292,32 @@ async function manageUser(params) {
   }
 }
 
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ 
+    error: 'Not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
   logger.error('Unhandled error:', error);
-  res.status(500).json({ error: 'Internal server error' });
+  
+  // CORS error específico
+  if (error.message && error.message.includes('CORS')) {
+    return res.status(403).json({ 
+      error: 'CORS policy error',
+      message: error.message,
+      origin: req.headers.origin || 'no origin'
+    });
+  }
+  
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? error.message : undefined
+  });
 });
 
 // Start server
