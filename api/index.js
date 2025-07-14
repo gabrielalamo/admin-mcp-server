@@ -40,6 +40,17 @@ app.use(helmet({
 }));
 app.use(express.json());
 
+// Trust proxy - importante para detectar HTTPS na Vercel
+app.set('trust proxy', true);
+
+// Middleware para forçar HTTPS em produção
+app.use((req, res, next) => {
+  // Na Vercel, o header x-forwarded-proto indica o protocolo original
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  req.protocol = proto;
+  next();
+});
+
 // CORS configuration - Totalmente aberto para OpenAI
 app.use(cors({
   origin: '*',
@@ -90,7 +101,8 @@ app.options('*', (req, res) => {
 // OpenAI Plugin Manifest (necessário para auto-discovery)
 app.get('/.well-known/ai-plugin.json', (req, res) => {
   const host = req.get('host');
-  const protocol = req.protocol;
+  // Força HTTPS para compatibilidade com OpenAI
+  const protocol = 'https';
   
   res.json({
     schema_version: "v1",
@@ -130,15 +142,17 @@ app.get('/legal', (req, res) => {
 // OpenAPI specification in YAML format (OpenAI prefers YAML)
 app.get('/openapi.yaml', (req, res) => {
   const host = req.get('host');
-  const protocol = req.protocol;
+  // Força HTTPS para compatibilidade com OpenAI
+  const protocol = 'https';
   
-  const yaml = `openapi: 3.0.1
+  const yaml = `openapi: 3.1.0
 info:
   title: Admin Analytics MCP API
   description: API for user analytics, payment analytics, and user management
   version: 'v1'
 servers:
   - url: ${protocol}://${host}
+    description: Production server
 paths:
   /functions/get_user_analytics:
     post:
@@ -293,10 +307,11 @@ paths:
 // OpenAPI JSON alternative
 app.get('/openapi.json', (req, res) => {
   const host = req.get('host');
-  const protocol = req.protocol;
+  // Força HTTPS para compatibilidade com OpenAI
+  const protocol = 'https';
   
   res.json({
-    openapi: '3.0.1',
+    openapi: '3.1.0',
     info: {
       title: 'Admin Analytics MCP API',
       description: 'API for user analytics, payment analytics, and user management',
@@ -304,7 +319,8 @@ app.get('/openapi.json', (req, res) => {
     },
     servers: [
       {
-        url: `${protocol}://${host}`
+        url: `${protocol}://${host}`,
+        description: 'Production server'
       }
     ],
     paths: {
