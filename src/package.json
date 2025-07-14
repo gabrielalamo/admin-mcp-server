@@ -1,0 +1,37 @@
+{
+  "name": "admin-mcp-server",
+  "version": "1.0.0",
+  "description": "Servidor MCP dedicado para administração da plataforma",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "build": "echo 'No build needed for Node.js'",
+    "test": "echo 'Tests not implemented yet'",
+    "vercel-build": "echo 'No build needed for Node.js'"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "server",
+    "admin",
+    "supabase",
+    "analytics"
+  ],
+  "author": "Platform Admin",
+  "license": "MIT"
+}
