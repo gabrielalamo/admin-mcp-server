@@ -1,23 +1,14 @@
 {
   "version": 2,
   "name": "admin-mcp-server",
-  "builds": [
+  "rewrites": [
     {
-      "src": "index.js",
-      "use": "@vercel/node"
+      "source": "/(.*)",
+      "destination": "/api/index.js"
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "index.js"
-    }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  },
   "functions": {
-    "index.js": {
+    "api/index.js": {
       "maxDuration": 10
     }
   }
